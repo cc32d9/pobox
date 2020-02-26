@@ -92,13 +92,35 @@ rpc.get_account(program.recipient)
         
         let dataToMac = Buffer.concat([iv, ephemPublicKey.key.data, ciphertext]);
         var mac = crypto.createHmac("sha256", macKey).update(dataToMac).digest();
-
         
-        console.log({
-            iv: iv,
-            ephemPublicKey: ephemPublicKey.toString(),
-            ciphertext: ciphertext,
-            mac: mac,
+        api.transact(
+            {
+                actions:
+                [
+                    {
+                        account: program.contract,
+                        name: 'send',
+                        authorization: [{
+                            actor: program.sender,
+                            permission: 'active'} ],
+                        data: {
+                            from: program.sender,
+                            to: program.recipient,
+                            iv: iv.toString('hex'),
+                            ephem_key: ephemPublicKey.toString(),
+                            ciphertext: ciphertext.toString('hex'),
+                            mac: mac.toString('hex')
+                        },
+                    }
+                ]
+            },
+            {
+                blocksBehind: 10,
+                expireSeconds: 30
+            }
+        ).then(function(result) {
+            console.info('transaction_id is : ', result.transaction_id);
+            process.exit(0);
         });
     })
     .catch(function(err) {
