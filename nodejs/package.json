@@ -1,0 +1,20 @@
+{
+    "name": "pobox",
+    "version": "0.0.1",
+    "description": "",
+    "license": "MIT",
+    "author": {
+        "name": "cc32d9",
+        "url": "https://github.com/cc32d9"
+    },
+    "engines": {
+        "node": ">= 0.12.0"
+    },
+    "dependencies": {
+        "commander": "^4.1.1",
+        "node-fetch": ">= 2.6.0",
+        "eosjs": "EOSIO/eosjs#release/21.0.x",
+        "elliptic": "6.5.2",
+        "sha.js": "2.4.11"
+    }
+}

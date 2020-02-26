@@ -1,0 +1,121 @@
+#!/usr/bin/env node
+
+'use strict'
+const program           = require('commander');
+
+const { Api, JsonRpc, RpcError } = require('eosjs');
+const { JsSignatureProvider } = require('eosjs/dist/eosjs-jssig');
+const fetch = require('node-fetch');
+const { TextEncoder, TextDecoder } = require('util');
+
+const { PrivateKey } = require('eosjs/dist/PrivateKey');
+const { PublicKey } = require('eosjs/dist/PublicKey');
+const { KeyType } = require('eosjs/dist/eosjs-numeric');
+const EC = require('elliptic').ec;
+
+const crypto = require("crypto");
+const shajs = require('sha.js');
+
+const fs = require('fs');
+
+program
+    .requiredOption('--url [value]', 'EOSIO API URL')
+    .requiredOption('--sender [value]', 'sender EOSIO account')
+    .requiredOption('--senderkey [value]', 'sender private key for signing transaction')
+    .requiredOption('--recipient [value]', 'recipient EOSIO account')
+    .requiredOption('--contract [value]', 'pobox contract account')
+    .requiredOption('--file [value]', 'Message file to encrypt')
+    .parse(process.argv);
+
+
+if( !fs.existsSync(program.file)) {
+    console.error('File does not exist: ' + program.file);
+    process.exit(1);
+}
+
+const plaintext = fs.readFileSync(program.file);
+if( plaintext.length == 0 ) {
+    console.error('File is empty: ' + program.file);
+    process.exit(1);
+}
+
+const sigProvider = new JsSignatureProvider([program.senderkey]);
+const rpc = new JsonRpc(program.url, { fetch });
+const api = new Api({rpc: rpc, signatureProvider: sigProvider,
+                     textDecoder: new TextDecoder(), textEncoder: new TextEncoder()});
+
+rpc.get_account(program.recipient)
+    .then(function(resp) {
+        let rcptKey = '';
+
+        resp.permissions.forEach(function(perm) {
+            if( perm.perm_name == 'pobox' ) {
+                if( perm.required_auth.keys.length > 1 ) {
+                    throw('Found more than one key in pobox permissoin of ' + program.recipient);
+                }
+                rcptKey = perm.required_auth.keys[0].key;
+            }
+        });
+        
+        if( rcptKey.length == 0 ) {
+            console.debug('Could not find pobox permission, looking up active key');
+            resp.permissions.forEach(function(perm) {
+                if( perm.perm_name == 'active' ) {
+                    if( perm.required_auth.keys.length > 1 ) {
+                        throw('Found more than one key in active permissoin of ' + program.recipient);
+                    }
+                    rcptKey = perm.required_auth.keys[0].key;
+                }
+            });
+        }
+        
+        if( rcptKey.length == 0 ) {
+            throw('Cannot find pobox or active keys for account ' + program.recipient);
+        }
+
+        rcptKey = PublicKey.fromString(rcptKey).toElliptic();
+
+        let ephemKey = new EC('secp256k1').genKeyPair();
+        let ephemPublicKey = PublicKey.fromElliptic(ephemKey, KeyType.k1);
+        
+        let shared = ephemKey.derive(rcptKey.getPublic());
+        let hash = new shajs.sha512().update(shared).digest();
+
+        let iv = crypto.randomBytes(16);
+        let encryptionKey = hash.slice(0, 32);
+        let macKey = hash.slice(32);
+
+        let cipher = crypto.createCipheriv("aes-256-cbc", encryptionKey, iv);
+        let firstChunk = cipher.update(plaintext);
+        let secondChunk = cipher.final();
+        let ciphertext = Buffer.concat([firstChunk, secondChunk]);
+        
+        let dataToMac = Buffer.concat([iv, ephemPublicKey.key.data, ciphertext]);
+        var mac = crypto.createHmac("sha256", macKey).update(dataToMac).digest();
+
+        
+        console.log({
+            iv: iv,
+            ephemPublicKey: ephemPublicKey.toString(),
+            ciphertext: ciphertext,
+            mac: mac,
+        });
+    })
+    .catch(function(err) {
+        console.error(err);
+        process.exit(1);
+    });
+
+
+
+
+
+
+
+
+/*
+ Local Variables:
+ mode: javascript
+ indent-tabs-mode: nil
+ End:
+*/
