@@ -78,7 +78,7 @@ rpc.get_account(program.recipient)
         let ephemKey = new EC('secp256k1').genKeyPair();
         let ephemPublicKey = PublicKey.fromElliptic(ephemKey, KeyType.k1);
         
-        let shared = ephemKey.derive(rcptKey.getPublic());
+        let shared = Buffer.from(ephemKey.derive(rcptKey.getPublic()).toString('hex'), 'hex');
         let hash = new shajs.sha512().update(shared).digest();
 
         let iv = crypto.randomBytes(16);

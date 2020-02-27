@@ -68,8 +68,8 @@ function retrieve_messages(pos) {
             let ciphertext = Buffer.from(msg.ciphertext, 'hex');
             let mac = Buffer.from(msg.mac, 'hex');
             
-            let shared = rcptKey.derive(ephemKey.getPublic());
-            let hash = new shajs.sha512().update(shared).digest();
+            let shared = Buffer.from(rcptKey.derive(ephemKey.getPublic()).toString('hex'), 'hex');
+            let hash = shajs('sha512').update(shared).digest();
 
             let encryptionKey = hash.slice(0, 32);
             let macKey = hash.slice(32);
