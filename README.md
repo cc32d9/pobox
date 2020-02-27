@@ -11,7 +11,7 @@ them from the table.
 
 The two utilities in "nodejs" folder are for sending and decoding the
 messages. The sending script looks for permission called "pobox" on
-the recipient account, and takes its public key fo rencryption. If
+the recipient account, and takes its public key for encryption. If
 it's not found, it uses the recipient's active key.
 
 
