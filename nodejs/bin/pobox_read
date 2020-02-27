@@ -1,0 +1,113 @@
+#!/usr/bin/env node
+
+'use strict'
+const program           = require('commander');
+
+const { Api, JsonRpc, RpcError } = require('eosjs');
+const { JsSignatureProvider } = require('eosjs/dist/eosjs-jssig');
+const fetch = require('node-fetch');
+const { TextEncoder, TextDecoder } = require('util');
+
+const { PrivateKey } = require('eosjs/dist/PrivateKey');
+const { PublicKey } = require('eosjs/dist/PublicKey');
+const { KeyType } = require('eosjs/dist/eosjs-numeric');
+const EC = require('elliptic').ec;
+
+const crypto = require("crypto");
+const shajs = require('sha.js');
+
+const fs = require('fs');
+
+program
+    .requiredOption('--url [value]', 'EOSIO API URL')
+    .requiredOption('--recipient [value]', 'recipient EOSIO account')
+    .requiredOption('--key [value]', 'recipient private key for decrypting the messages')
+    .requiredOption('--contract [value]', 'pobox contract account')
+    .requiredOption('--start [value]', 'start message ID', 0)
+    .requiredOption('--dir [value]', 'directory to store decrypted messages')
+    .parse(process.argv);
+
+
+if( !fs.lstatSync(program.dir).isDirectory() ) {
+    console.error('This is not a directory: ' + program.dir);
+    process.exit(1);
+}
+
+var rcptKey = PrivateKey.fromString(program.key).toElliptic();
+
+const rpc = new JsonRpc(program.url, { fetch });
+
+var totalMessages = 0;
+
+retrieve_messages(program.start);
+
+
+function retrieve_messages(pos) {
+    rpc.get_table_rows(
+        {
+            json: true,
+            code: program.contract,
+            scope: program.recipient,
+            table: 'messages',
+            key_type: 'i64',
+            lower_bound: pos,
+            limit: 1,
+            reverse: false,
+            show_payer: false
+        })
+        .then(function(resp) {
+            if( resp.rows.length == 0 ) {
+                console.log('Decoded ' + totalMessages + ' messages');
+                process.exit(0);
+            }
+
+            let msg = resp.rows[0];
+            let ephemPublicKey = PublicKey.fromString(msg.ephem_key)
+            let ephemKey = ephemPublicKey.toElliptic();
+            let iv = Buffer.from(msg.iv, 'hex');
+            let ciphertext = Buffer.from(msg.ciphertext, 'hex');
+            let mac = Buffer.from(msg.mac, 'hex');
+            
+            let shared = rcptKey.derive(ephemKey.getPublic());
+            let hash = new shajs.sha512().update(shared).digest();
+
+            let encryptionKey = hash.slice(0, 32);
+            let macKey = hash.slice(32);
+
+            let dataToMac = Buffer.concat([iv, ephemPublicKey.key.data, ciphertext]);
+            let realMac = crypto.createHmac("sha256", macKey).update(dataToMac).digest();
+
+            if( !realMac.equals(mac) ) {
+                console.error('Bad MAC');
+            }
+            else {
+                let cipher = crypto.createDecipheriv("aes-256-cbc", encryptionKey, iv);
+                let firstChunk = cipher.update(ciphertext);
+                let secondChunk = cipher.final();
+                let plaintext = Buffer.concat([firstChunk, secondChunk]);
+
+                let outfile = program.dir + '/' + msg.id + '-' + msg.sender;
+                
+                fs.writeFile(outfile, plaintext, (err) => {
+                    if (err) throw err;
+                    console.log('Wrote ' + outfile);
+                    totalMessages++;
+                    retrieve_messages(pos+1);
+                });
+            }
+        });
+}
+
+
+
+
+
+
+
+
+/*
+ Local Variables:
+ mode: javascript
+ indent-tabs-mode: nil
+ End:
+*/
