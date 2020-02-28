@@ -35,10 +35,27 @@ CONTRACT pobox : public eosio::contract {
     require_auth(from);
     check(is_account(to), "to account does not exist");
     require_recipient(to);
-    
+
+    int64_t msgid;
+    msgcounters _cntr(_self, 0);
+    auto cntitr = _cntr.find(to.value);
+    if( cntitr == _cntr.end() ) {
+      msgid = 1;
+      _cntr.emplace(from, [&]( auto& item ) {
+                            item.recipient = to;
+                            item.count = msgid;
+                          });
+    }
+    else {
+      msgid = cntitr->count + 1;
+      _cntr.modify( *cntitr, same_payer, [&]( auto& item ) {
+                                           item.count = msgid;
+                                         });
+    }
+      
     messages _msg(_self, to.value);
     _msg.emplace(from, [&]( auto& item ) {
-                          item.id = _msg.available_primary_key();
+                         item.id = msgid;
                           item.sender = from;
                           item.iv = iv;
                           item.ephem_key = ephem_key;
@@ -78,6 +95,15 @@ CONTRACT pobox : public eosio::contract {
      
  private:
 
+  struct [[eosio::table("msgcounters")]] msgcounter {
+    name             recipient;
+    uint64_t         count;
+    auto primary_key()const { return recipient.value; }
+  };
+  
+  typedef eosio::multi_index<name("msgcounters"), msgcounter> msgcounters;
+
+  
   struct [[eosio::table("messages")]] message {
     uint64_t         id;             /* autoincrement */
     name             sender;
@@ -90,8 +116,7 @@ CONTRACT pobox : public eosio::contract {
   };
   EOSLIB_SERIALIZE(message, (id)(sender)(iv)(ephem_key)(ciphertext)(mac));
   
-  typedef eosio::multi_index<name("messages"), message> messages;
-  
+  typedef eosio::multi_index<name("messages"), message> messages;  
 };
 
   
