@@ -92,7 +92,7 @@ function retrieve_messages(pos) {
                     if (err) throw err;
                     console.log('Wrote ' + outfile);
                     totalMessages++;
-                    retrieve_messages(pos+1);
+                    retrieve_messages(msg.id+1);
                 });
             }
         });
